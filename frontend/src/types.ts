@@ -72,6 +72,10 @@ export interface Application {
   requestedAmount: number;
   loanPurpose?: string;
   createdAt: string;
+  // Included by the applications list endpoint; a newly created application
+  // has no interview yet.
+  interviewStatus?: "pending" | "in_progress" | "completed" | null;
+  reportInterviewId?: string | null;
 }
 
 export interface InterviewSession {

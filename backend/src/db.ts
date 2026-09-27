@@ -327,18 +327,48 @@ function mapApplication(row: {
   };
 }
 
-export async function listApplications(): Promise<ApplicationRecord[]> {
-  if (!supabase) return demoApplications;
+type InterviewSummaryRow = { id: string; status: InterviewRecord["status"]; started_at: string };
+type ApplicationListItem = ApplicationRecord & {
+  interviewStatus: InterviewRecord["status"] | null;
+  reportInterviewId: string | null;
+};
+
+function summarizeInterviews(interviews: InterviewSummaryRow[]): Pick<ApplicationListItem, "interviewStatus" | "reportInterviewId"> {
+  const newestFirst = [...interviews].sort((a, b) =>
+    Date.parse(b.started_at) - Date.parse(a.started_at) || b.id.localeCompare(a.id));
+  // Preserve the dashboard rule: any completed interview marks the application
+  // finished, even if a newer unfinished session exists.
+  const completed = newestFirst.find(interview => interview.status === "completed");
+  return {
+    interviewStatus: completed ? "completed" : newestFirst[0]?.status ?? null,
+    reportInterviewId: completed?.id ?? null,
+  };
+}
+
+export async function listApplications(): Promise<ApplicationListItem[]> {
+  if (!supabase) {
+    const grouped = new Map<string, InterviewSummaryRow[]>();
+    for (const interview of demoInterviews.values()) {
+      const rows = grouped.get(interview.applicationId) ?? [];
+      rows.push({ id: interview.id, status: interview.status, started_at: interview.startedAt });
+      grouped.set(interview.applicationId, rows);
+    }
+    return demoApplications.map(application => ({
+      ...application, ...summarizeInterviews(grouped.get(application.id) ?? []),
+    }));
+  }
 
   const { data, error } = await supabase
     .from("applications")
     .select(
-      "id, applicant_name, loan_type, requested_amount, loan_purpose, created_at"
+      "id, applicant_name, loan_type, requested_amount, loan_purpose, created_at, interviews(id, status, started_at)"
     )
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return (data ?? []).map(mapApplication);
+  return (data ?? []).map(row => ({
+    ...mapApplication(row), ...summarizeInterviews(row.interviews as InterviewSummaryRow[]),
+  }));
 }
 
 export async function getApplication(

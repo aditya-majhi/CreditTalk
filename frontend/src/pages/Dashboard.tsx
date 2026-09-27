@@ -27,9 +27,7 @@ export function Dashboard() {
   const [saving, setSaving] = useState(false);
   const [formMessage, setFormMessage] = useState("");
   const [borrowerLink, setBorrowerLink] = useState("");
-  const [finishedApplications, setFinishedApplications] = useState<Set<string>>(
-    new Set()
-  );
+  const [loadError, setLoadError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [form, setForm] = useState<{
     applicantName: string;
@@ -52,24 +50,8 @@ export function Dashboard() {
   useEffect(() => {
     void api
       .getApplications()
-      .then(async loaded => {
-        setApplications(loaded);
-        const statuses = await Promise.all(
-          loaded.map(async application => {
-            const interviews = await api.getApplicationInterviews(
-              application.id
-            );
-            return [
-              application.id,
-              interviews.some(interview => interview.status === "completed"),
-            ] as const;
-          })
-        );
-        setFinishedApplications(
-          new Set(statuses.filter(([, finished]) => finished).map(([id]) => id))
-        );
-      })
-      .catch(() => setApplications([]))
+      .then(setApplications)
+      .catch(() => setLoadError("Applications could not be loaded. Please refresh to retry."))
       .finally(() => setIsLoading(false));
   }, []);
 
@@ -107,27 +89,27 @@ export function Dashboard() {
   };
 
   const handleOpenInterview = async (application: Application) => {
-    if (finishedApplications.has(application.id)) return;
+    if (application.interviewStatus === "completed") return;
     setSelectedApplicationId(application.id);
     const interview = await api.createInterview(application.id);
     setActiveInterviewId(interview.id);
     setBorrowerLink(interview.borrowerLink);
+    setApplications(useAppStore.getState().applications.map(item => item.id === application.id
+      ? { ...item, interviewStatus: "in_progress", reportInterviewId: null } : item));
   };
 
-  const handleViewReport = async (application: Application) => {
+  const handleViewReport = (application: Application) => {
+    if (!application.reportInterviewId) return;
     setSelectedApplicationId(application.id);
-    const interviews = await api.getApplicationInterviews(application.id);
-    const completed = interviews.find(
-      item => item.status === "completed" && item.analysisJson
-    );
-    setActiveInterviewId(completed?.id ?? null);
-    setAnalysis(completed?.analysisJson ?? null);
-    setTranscript(completed?.transcriptTurns ?? []);
-    navigate(completed ? `/report?interviewId=${encodeURIComponent(completed.id)}` : "/report");
+    setActiveInterviewId(application.reportInterviewId);
+    setAnalysis(null);
+    setTranscript([]);
+    navigate(`/report?interviewId=${encodeURIComponent(application.reportInterviewId)}`);
   };
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
+      {loadError && <p role="alert" className="mb-6 rounded-xl bg-red-50 p-4 text-sm text-red-700">{loadError}</p>}
       {isLoading && <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600">Loading applications…</div>}
       <div className="mb-8 flex items-center justify-between">
         <div>
@@ -297,22 +279,23 @@ export function Dashboard() {
 
                 <div className="flex items-center gap-2">
                   <button
-                    disabled={finishedApplications.has(application.id)}
+                    disabled={application.interviewStatus === "completed"}
                     onClick={() => void handleOpenInterview(application)}
-                    className={`inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 ${finishedApplications.has(application.id) ? "cursor-not-allowed" : "cursor-pointer"}`}
+                    className={`inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 ${application.interviewStatus === "completed" ? "cursor-not-allowed" : "cursor-pointer"}`}
                   >
-                    {finishedApplications.has(application.id) ? (
+                    {application.interviewStatus === "completed" ? (
                       <FileText className="h-4 w-4" />
                     ) : (
                       <PlayCircle className="h-4 w-4" />
                     )}
-                    {finishedApplications.has(application.id)
+                    {application.interviewStatus === "completed"
                       ? "Interview finished"
                       : "Create borrower link"}
                   </button>
                   <button
+                    disabled={!application.reportInterviewId}
                     onClick={() => handleViewReport(application)}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 cursor-pointer"
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <FileText className="h-4 w-4" />
                     View Report
