@@ -190,6 +190,8 @@ npm run dev
 
 For production, set the Vercel project root to `frontend` with build command `npm run build`. Configure `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, and `VITE_SUPABASE_ANON_KEY` in Vercel. Set the Render service root to `backend`, build command `npm ci && npm run build`, and start command `npm start`. Configure `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` on Render; never put the service role key in Vercel or another browser-facing environment.
 
+The frontend includes `vercel.json` with a rewrite to `/index.html` for React Router routes. Deploy this file with Vercel Root Directory set to `frontend` and Output Directory `dist`. It enables direct links and refreshes on `/borrow`, `/interview`, `/report`, and `/create-account`. API requests still use the separate Render URL configured in `VITE_API_BASE_URL`. Redeploy the frontend after adding or changing this configuration.
+
 Then open:
 
 - Frontend: http://localhost:5173
