@@ -170,7 +170,10 @@ export async function createInterview(
 export async function getInterview(
   interviewId: string
 ): Promise<DemoInterview | undefined> {
-  if (!supabase) return getDemoInterview(interviewId);
+  if (!supabase)
+    return demoInterviews.has(interviewId)
+      ? getDemoInterview(interviewId)
+      : undefined;
 
   const { data: interview, error: interviewError } = await supabase
     .from("interviews")
@@ -246,8 +249,12 @@ export async function listInterviewsForApplication(
     .eq("application_id", applicationId)
     .order("created_at", { ascending: false });
   if (error) throw error;
-  const interviews = await Promise.all((data ?? []).map(row => getInterview(row.id)));
-  return interviews.filter((interview): interview is DemoInterview => Boolean(interview));
+  const interviews = await Promise.all(
+    (data ?? []).map(row => getInterview(row.id))
+  );
+  return interviews.filter((interview): interview is DemoInterview =>
+    Boolean(interview)
+  );
 }
 
 export async function persistInterview(
@@ -258,18 +265,20 @@ export async function persistInterview(
   // Save transcript rows first. This prevents a failed transcript write from
   // leaving the interview marked completed and causing a misleading 409 on retry.
   if (interview.transcriptTurns.length > 0) {
-    const { error: turnsError } = await supabase.from("transcript_turns").upsert(
-      interview.transcriptTurns.map(turn => ({
-        // Browser/demo turn IDs are readable strings (for example turn-123).
-        // The Supabase schema uses UUID primary keys, so derive a stable UUID
-        // from the interview and turn IDs before persisting.
-        id: transcriptTurnUuid(interview.id, turn.id),
-        interview_id: interview.id,
-        speaker: turn.speaker,
-        text: turn.text,
-        timestamp_ms: turn.timestamp,
-      }))
-    );
+    const { error: turnsError } = await supabase
+      .from("transcript_turns")
+      .upsert(
+        interview.transcriptTurns.map(turn => ({
+          // Browser/demo turn IDs are readable strings (for example turn-123).
+          // The Supabase schema uses UUID primary keys, so derive a stable UUID
+          // from the interview and turn IDs before persisting.
+          id: transcriptTurnUuid(interview.id, turn.id),
+          interview_id: interview.id,
+          speaker: turn.speaker,
+          text: turn.text,
+          timestamp_ms: turn.timestamp,
+        }))
+      );
 
     if (turnsError) throw turnsError;
   }
@@ -290,7 +299,12 @@ export async function persistInterview(
 
 function transcriptTurnUuid(interviewId: string, turnId: string) {
   // Keep saved UUIDs stable when an interview is loaded and saved again.
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(turnId)) return turnId;
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      turnId
+    )
+  )
+    return turnId;
   const hex = createHash("sha256")
     .update(`${interviewId}:${turnId}`)
     .digest("hex")
@@ -327,37 +341,105 @@ function mapApplication(row: {
   };
 }
 
-type InterviewSummaryRow = { id: string; status: InterviewRecord["status"]; started_at: string; report_summary: string | null };
+type InterviewSummaryRow = {
+  id: string;
+  status: InterviewRecord["status"];
+  started_at: string;
+  report_summary: string | null;
+};
 type ApplicationListItem = ApplicationRecord & {
   interviewStatus: InterviewRecord["status"] | null;
   reportInterviewId: string | null;
   completedInterviewId: string | null;
 };
 
-function summarizeInterviews(interviews: InterviewSummaryRow[]): Pick<ApplicationListItem, "interviewStatus" | "reportInterviewId" | "completedInterviewId"> {
-  const newestFirst = [...interviews].sort((a, b) =>
-    Date.parse(b.started_at) - Date.parse(a.started_at) || b.id.localeCompare(a.id));
+function summarizeInterviews(
+  interviews: InterviewSummaryRow[]
+): Pick<
+  ApplicationListItem,
+  "interviewStatus" | "reportInterviewId" | "completedInterviewId"
+> {
+  const newestFirst = [...interviews].sort(
+    (a, b) =>
+      Date.parse(b.started_at) - Date.parse(a.started_at) ||
+      b.id.localeCompare(a.id)
+  );
   // Preserve the dashboard rule: any completed interview marks the application
   // finished, even if a newer unfinished session exists.
-  const completed = newestFirst.find(interview => interview.status === "completed");
+  const completed = newestFirst.find(
+    interview => interview.status === "completed"
+  );
   return {
-    interviewStatus: completed ? "completed" : newestFirst[0]?.status ?? null,
+    interviewStatus: completed ? "completed" : (newestFirst[0]?.status ?? null),
     completedInterviewId: completed?.id ?? null,
     reportInterviewId: completed?.report_summary ? completed.id : null,
   };
 }
 
-export async function listApplications(): Promise<ApplicationListItem[]> {
+const demoOwners = new Map<string, string>([
+  ["app-raj-sharma", "local-demo-lender"],
+]);
+
+export async function lenderOwnsApplication(
+  applicationId: string,
+  lenderId: string
+): Promise<boolean> {
+  if (!lenderId) return false;
+  if (!supabase) return demoOwners.get(applicationId) === lenderId;
+  const { data, error } = await supabase
+    .from("applications")
+    .select("id")
+    .eq("id", applicationId)
+    .eq("lender_id", lenderId)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function lenderOwnsInterview(
+  interviewId: string,
+  lenderId: string
+): Promise<boolean> {
+  if (!lenderId) return false;
+  if (!supabase) {
+    const interview = demoInterviews.get(interviewId);
+    return Boolean(
+      interview &&
+      (await lenderOwnsApplication(interview.applicationId, lenderId))
+    );
+  }
+  const { data, error } = await supabase
+    .from("interviews")
+    .select("id, applications!inner(lender_id)")
+    .eq("id", interviewId)
+    .eq("applications.lender_id", lenderId)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function listApplications(
+  lenderId: string
+): Promise<ApplicationListItem[]> {
+  if (!lenderId) throw new Error("Lender identity is required");
   if (!supabase) {
     const grouped = new Map<string, InterviewSummaryRow[]>();
     for (const interview of demoInterviews.values()) {
       const rows = grouped.get(interview.applicationId) ?? [];
-      rows.push({ id: interview.id, status: interview.status, started_at: interview.startedAt, report_summary: interview.analysisJson?.summary ?? null });
+      rows.push({
+        id: interview.id,
+        status: interview.status,
+        started_at: interview.startedAt,
+        report_summary: interview.analysisJson?.summary ?? null,
+      });
       grouped.set(interview.applicationId, rows);
     }
-    return demoApplications.map(application => ({
-      ...application, ...summarizeInterviews(grouped.get(application.id) ?? []),
-    }));
+    return demoApplications
+      .filter(application => demoOwners.get(application.id) === lenderId)
+      .map(application => ({
+        ...application,
+        ...summarizeInterviews(grouped.get(application.id) ?? []),
+      }));
   }
 
   const { data, error } = await supabase
@@ -365,11 +447,13 @@ export async function listApplications(): Promise<ApplicationListItem[]> {
     .select(
       "id, applicant_name, loan_type, requested_amount, loan_purpose, created_at, interviews(id, status, started_at, report_summary:analysis_json->>summary)"
     )
+    .eq("lender_id", lenderId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
   return (data ?? []).map(row => ({
-    ...mapApplication(row), ...summarizeInterviews(row.interviews as InterviewSummaryRow[]),
+    ...mapApplication(row),
+    ...summarizeInterviews(row.interviews as InterviewSummaryRow[]),
   }));
 }
 
@@ -392,12 +476,16 @@ export async function getApplication(
   return data ? mapApplication(data) : undefined;
 }
 
-export async function createApplication(input: {
-  applicantName: string;
-  loanType: LoanType;
-  requestedAmount: number;
-  loanPurpose?: string;
-}): Promise<ApplicationRecord> {
+export async function createApplication(
+  input: {
+    applicantName: string;
+    loanType: LoanType;
+    requestedAmount: number;
+    loanPurpose?: string;
+  },
+  lenderId: string
+): Promise<ApplicationRecord> {
+  if (!lenderId) throw new Error("Lender identity is required");
   if (!supabase) {
     const application: ApplicationRecord = {
       id: `app-${Date.now()}`,
@@ -409,12 +497,14 @@ export async function createApplication(input: {
     };
 
     demoApplications.push(application);
+    demoOwners.set(application.id, lenderId);
     return application;
   }
 
   const { data, error } = await supabase
     .from("applications")
     .insert({
+      lender_id: lenderId,
       applicant_name: input.applicantName,
       loan_type: input.loanType,
       requested_amount: input.requestedAmount,

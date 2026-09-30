@@ -230,7 +230,15 @@ Reports are rebuilt from saved transcript turns when opened, including existing 
 
 Report extraction now uses Gemini structured JSON output. The earlier rule-based extractor remains in the repository for reference but is no longer called by report endpoints. Gemini receives the saved conversation and application context; interview financial fields must come from borrower answers. Numeric and text fields include source quotes that the backend checks against borrower turns. Schema and quote checks do not guarantee semantic accuracy, so lenders should review reports.
 
-### Gemini setup
+### Lender data ownership rollout
+
+Applications belong to the authenticated lender who creates them. The backend assigns `lender_id` from the verified Supabase user, filters the applications list, and checks ownership before application/interview/report/consent/voice operations. Borrower links retain their restricted access to their own interview. Local demo mode without Supabase uses one local demo lender.
+
+For existing installations, clear the application, interview and transcript data as planned, then run `backend/migrations/20260930_lender_ownership.sql` in Supabase SQL Editor before redeploying the backend. Keep Auth accounts and lender authorization records. The migration does not delete data or infer owners and fails if existing applications have no owner. Fresh installations can use `backend/schema.sql`.
+
+Ownership is mandatory (`NOT NULL` foreign key to Auth users). Application data tables have RLS enabled and browser-role table privileges revoked; access goes through the authenticated backend. The service-role client requires the explicit ownership checks in that backend.
+
+### Gemini environment
 
 Add `GEMINI_API_KEY` to the backend `.env` locally and to Render environment variables in production. `GEMINI_MODEL` defaults to `gemini-3.8-flash` and can be set to another Gemini model supporting structured JSON output. Keep the key out of Vercel frontend variables. Restart/redeploy the backend after configuration. The integration uses Google's REST API and requires no new npm packages or database migration.
 

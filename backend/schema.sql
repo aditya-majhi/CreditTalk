@@ -2,12 +2,19 @@ create extension if not exists "pgcrypto";
 
 create table if not exists applications (
   id uuid primary key default gen_random_uuid(),
+  lender_id uuid not null references auth.users(id),
   applicant_name text not null,
   loan_type text not null,
   requested_amount bigint not null,
   loan_purpose text,
   created_at timestamptz not null default now()
 );
+
+-- Existing installations must clear their application data before applying
+-- this ownership change, or explicitly assign owners before SET NOT NULL.
+alter table public.applications add column if not exists lender_id uuid references auth.users(id);
+alter table public.applications alter column lender_id set not null;
+create index if not exists idx_applications_lender_created on public.applications(lender_id, created_at desc);
 
 create table if not exists interviews (
   id uuid primary key default gen_random_uuid(),
@@ -48,4 +55,11 @@ create table if not exists public.lender_users (
 
 alter table public.lender_users enable row level security;
 revoke all on public.lender_users from anon, authenticated;
-grant select on public.lender_users to service_role;
+grant select, insert, update on public.lender_users to service_role;
+
+-- Browser clients use the authorized backend, never these tables directly.
+alter table public.applications enable row level security;
+alter table public.interviews enable row level security;
+alter table public.transcript_turns enable row level security;
+revoke all on public.applications, public.interviews, public.transcript_turns from anon, authenticated;
+grant select, insert, update, delete on public.applications, public.interviews, public.transcript_turns to service_role;

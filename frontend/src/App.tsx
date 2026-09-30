@@ -13,6 +13,17 @@ import { Interview } from "./pages/Interview";
 import { Report } from "./pages/Report";
 import { api } from "./lib/api";
 import { supabase } from "./lib/supabase";
+import { useAppStore } from "./store";
+
+function clearLenderData() {
+  useAppStore.setState({
+    applications: [],
+    selectedApplicationId: null,
+    activeInterviewId: null,
+    transcript: [],
+    analysis: null,
+  });
+}
 
 function LenderLogin({
   onLogin,
@@ -216,6 +227,7 @@ function RoutedApp() {
 
   const signOut = async () => {
     if (supabase) await supabase.auth.signOut({ scope: "local" });
+    clearLenderData();
     setLenderAuthenticated(false);
   };
 
@@ -230,7 +242,10 @@ function RoutedApp() {
       <LenderLogin
         createAccount={location.pathname === "/create-account"}
         onChangeMode={create => navigate(create ? "/create-account" : "/")}
-        onLogin={() => setLenderAuthenticated(true)}
+        onLogin={() => {
+          clearLenderData();
+          setLenderAuthenticated(true);
+        }}
       />
     );
   return (
