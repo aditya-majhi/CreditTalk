@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BriefcaseBusiness,
   CirclePlus,
   FileText,
   PlayCircle,
+  Loader2,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { formatCurrency, formatLoanType } from "../lib/audio";
@@ -28,6 +29,9 @@ export function Dashboard() {
   const [formMessage, setFormMessage] = useState("");
   const [borrowerLink, setBorrowerLink] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [generatingReports, setGeneratingReports] = useState<Set<string>>(new Set());
+  const reportRequests = useRef(new Set<string>());
+  const [reportErrors, setReportErrors] = useState<Record<string, string>>( {} );
   const [isLoading, setIsLoading] = useState(true);
   const [form, setForm] = useState<{
     applicantName: string;
@@ -107,10 +111,29 @@ export function Dashboard() {
     navigate(`/report?interviewId=${encodeURIComponent(application.reportInterviewId)}`);
   };
 
+  const handleGenerateReport = async (application: Application) => {
+    const interviewId = application.completedInterviewId;
+    if (!interviewId || reportRequests.current.has(application.id)) return;
+    reportRequests.current.add(application.id);
+    setGeneratingReports(new Set(reportRequests.current));
+    setReportErrors(current => ({ ...current, [application.id]: "" }));
+    try {
+      await api.regenerateReport(interviewId);
+      setApplications(useAppStore.getState().applications.map(item => item.id === application.id
+        ? { ...item, reportInterviewId: interviewId } : item));
+    } catch (error) {
+      setReportErrors(current => ({ ...current, [application.id]:
+        (error as { response?: { data?: { error?: string } } }).response?.data?.error
+          ?? "Report generation failed. Your interview is saved. Please retry." }));
+    } finally {
+      reportRequests.current.delete(application.id);
+      setGeneratingReports(new Set(reportRequests.current));
+    }
+  };
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
       {loadError && <p role="alert" className="mb-6 rounded-xl bg-red-50 p-4 text-sm text-red-700">{loadError}</p>}
-      {isLoading && <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600">Loading applications…</div>}
       <div className="mb-8 flex items-center justify-between">
         <div>
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
@@ -249,8 +272,15 @@ export function Dashboard() {
           </h2>
         </div>
 
-        <div className="divide-y divide-slate-200">
-          {applications.length === 0 ? (
+        <div className="divide-y divide-slate-200" aria-busy={isLoading}>
+          {isLoading ? (
+            <div role="status" className="flex min-h-48 flex-col items-center justify-center gap-3 p-8 text-sm text-slate-600">
+              <Loader2 aria-hidden="true" className="h-7 w-7 animate-spin text-emerald-600 motion-reduce:animate-none" />
+              <span>Loading applications...</span>
+            </div>
+          ) : loadError ? (
+            <p className="p-6 text-sm text-slate-500">Unable to display applications. Please refresh to retry.</p>
+          ) : applications.length === 0 ? (
             <div className="p-6 text-sm text-slate-500">
               No applications yet.
             </div>
@@ -292,15 +322,22 @@ export function Dashboard() {
                       ? "Interview finished"
                       : "Create borrower link"}
                   </button>
-                  <button
-                    disabled={!application.reportInterviewId}
+                  {application.reportInterviewId ? <button
                     onClick={() => handleViewReport(application)}
                     className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <FileText className="h-4 w-4" />
                     View Report
-                  </button>
+                  </button> : application.completedInterviewId ? <button
+                    disabled={generatingReports.has(application.id)}
+                    onClick={() => void handleGenerateReport(application)}
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {generatingReports.has(application.id) && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {generatingReports.has(application.id) ? "Generating report..." : reportErrors[application.id] ? "Retry Generate Report" : "Generate Report"}
+                  </button> : null}
                 </div>
+                {reportErrors[application.id] && <p role="alert" className="max-w-md rounded-lg bg-red-50 p-3 text-sm text-red-700">{reportErrors[application.id]}</p>}
               </div>
             ))
           )}

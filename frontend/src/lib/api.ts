@@ -155,23 +155,7 @@ export const api = {
       token,
     }),
   finalizeInterview: (interviewId: string, turns: TranscriptTurn[], token?: string) =>
-    request<{
-      applicant: string;
-      loanType: string;
-      requestedAmount: number;
-      purpose: string;
-      summary: string;
-      facts: Array<{
-        key: string;
-        value: unknown;
-        category: string;
-        sourceTurnId: string;
-      }>;
-      notes: string[];
-      clarifications: string[];
-      structuredSummary: InterviewAnalysis["structuredSummary"];
-      creditBureauStatus: string;
-    }>(`/interviews/${interviewId}/finalize`, {
+    request<{ completed: boolean }>(`/interviews/${interviewId}/finalize`, {
       method: "POST",
       data: turns,
       token,

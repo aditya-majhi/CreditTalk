@@ -217,10 +217,10 @@ export function Interview({ borrowerToken }: { borrowerToken?: string }) {
     setIsBusy(true);
     setErrorMessage("");
     // Stop recording and speech playback before finalizing so the agent cannot
-    // continue talking while the report is being saved.
+    // continue talking while the interview is being saved.
     stopRealtimeTranscript();
     try {
-      const report = await api.finalizeInterview(
+      await api.finalizeInterview(
         activeInterviewId ?? "demo",
         transcriptRows,
         borrowerToken
@@ -232,16 +232,9 @@ export function Interview({ borrowerToken }: { borrowerToken?: string }) {
         return;
       }
       setTranscript(transcriptRows);
-      setAnalysis({
-        facts: report.facts,
-        notes: report.notes,
-        summary: report.summary,
-        structuredSummary: report.structuredSummary,
-        inconsistencies: [],
-        clarifications: report.clarifications,
-        creditBureauStatus: "not_connected",
-      });
-      navigate(`/report?interviewId=${encodeURIComponent(activeInterviewId ?? "demo")}`);
+      setAnalysis(null);
+      setCompleted(true);
+      navigate("/");
     } catch (error) {
       console.error(error);
       const status = (error as { response?: { status?: number } })?.response?.status;
@@ -251,7 +244,7 @@ export function Interview({ borrowerToken }: { borrowerToken?: string }) {
         setErrorMessage("This interview is already finished.");
       } else {
         const serverMessage = (error as { response?: { data?: { error?: string } } })?.response?.data?.error;
-        setErrorMessage(serverMessage ?? "The final report could not be created. Try again.");
+        setErrorMessage(serverMessage ?? "The interview could not be saved. Please try again.");
       }
     } finally {
       setIsBusy(false);
@@ -278,7 +271,7 @@ export function Interview({ borrowerToken }: { borrowerToken?: string }) {
         </div>
       </div>
 
-      {completed ? <div className="mx-auto max-w-2xl rounded-2xl border border-emerald-200 bg-white p-8 text-center shadow-xs"><h2 className="text-2xl font-semibold">Interview finished</h2><p className="mt-2 text-slate-600">This interview has already been completed and cannot be started again.</p></div> : <>
+      {completed ? <div className="mx-auto max-w-2xl rounded-2xl border border-emerald-200 bg-white p-8 text-center shadow-xs"><h2 className="text-2xl font-semibold">Interview completed</h2><p className="mt-2 text-slate-600">Thank you. Your answers have been saved. You can close this page.</p></div> : <>
 
       {!borrowerToken && <div className="mb-6 grid gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs md:grid-cols-3">
         <div>

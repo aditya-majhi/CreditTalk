@@ -234,10 +234,11 @@ Report extraction now uses Gemini structured JSON output. The earlier rule-based
 
 Add `GEMINI_API_KEY` to the backend `.env` locally and to Render environment variables in production. `GEMINI_MODEL` defaults to `gemini-3.8-flash` and can be set to another Gemini model supporting structured JSON output. Keep the key out of Vercel frontend variables. Restart/redeploy the backend after configuration. The integration uses Google's REST API and requires no new npm packages or database migration.
 
-- Interview analysis/completion sends the transcript and application context to Gemini. The response is validated and mapped to the existing report JSON, then saved in `analysis_json`.
-- Report reads use the stored JSON without invoking AI. Use **Regenerate with AI** on an existing report to update it from its saved transcript.
+- Interview completion saves the transcript, clears any interim analysis, and marks the interview completed without calling Gemini. The borrower can leave once the save succeeds.
+- The dashboard applications response includes `completedInterviewId` and `reportInterviewId`. Completed interviews without a report show **Generate Report**. Only clicking that button sends the saved transcript and application context to Gemini; validated JSON is saved in `analysis_json`, and the dashboard changes to **View Report**.
+- Report reads use stored JSON without invoking AI. **Regenerate with AI** on an existing report explicitly requests a replacement. There is no automatic report generation or automatic retry.
 - Application creation offers **Fill with AI**: paste notes, extract a draft, review/edit the fields, then save. Missing fields are left empty (loan type displays Other for review); extraction itself does not create an application.
-- Provider failures, missing configuration, timeouts and invalid responses produce explicit errors. There is no silent rule-based fallback. The transcript is saved before report generation; a failed completion leaves the interview open for retry. Existing report regeneration failures preserve the previous report.
+- Provider failures, missing configuration, timeouts and invalid responses produce explicit errors and allow a manual retry. They never reopen a completed interview or discard its saved transcript. Existing report regeneration failures preserve the previous report. Only a database save failure prevents successful interview completion.
 - Gemini is instructed to understand multilingual answers, normalize spoken amounts and use question context. Unknown or conflicting details remain null. Missing historical transcript data cannot be reconstructed. Calls send personal application/conversation data to Google and may incur provider charges.
 
 Reference: [Gemini structured outputs](https://ai.google.dev/gemini-api/docs/structured-output).

@@ -327,13 +327,14 @@ function mapApplication(row: {
   };
 }
 
-type InterviewSummaryRow = { id: string; status: InterviewRecord["status"]; started_at: string };
+type InterviewSummaryRow = { id: string; status: InterviewRecord["status"]; started_at: string; report_summary: string | null };
 type ApplicationListItem = ApplicationRecord & {
   interviewStatus: InterviewRecord["status"] | null;
   reportInterviewId: string | null;
+  completedInterviewId: string | null;
 };
 
-function summarizeInterviews(interviews: InterviewSummaryRow[]): Pick<ApplicationListItem, "interviewStatus" | "reportInterviewId"> {
+function summarizeInterviews(interviews: InterviewSummaryRow[]): Pick<ApplicationListItem, "interviewStatus" | "reportInterviewId" | "completedInterviewId"> {
   const newestFirst = [...interviews].sort((a, b) =>
     Date.parse(b.started_at) - Date.parse(a.started_at) || b.id.localeCompare(a.id));
   // Preserve the dashboard rule: any completed interview marks the application
@@ -341,7 +342,8 @@ function summarizeInterviews(interviews: InterviewSummaryRow[]): Pick<Applicatio
   const completed = newestFirst.find(interview => interview.status === "completed");
   return {
     interviewStatus: completed ? "completed" : newestFirst[0]?.status ?? null,
-    reportInterviewId: completed?.id ?? null,
+    completedInterviewId: completed?.id ?? null,
+    reportInterviewId: completed?.report_summary ? completed.id : null,
   };
 }
 
@@ -350,7 +352,7 @@ export async function listApplications(): Promise<ApplicationListItem[]> {
     const grouped = new Map<string, InterviewSummaryRow[]>();
     for (const interview of demoInterviews.values()) {
       const rows = grouped.get(interview.applicationId) ?? [];
-      rows.push({ id: interview.id, status: interview.status, started_at: interview.startedAt });
+      rows.push({ id: interview.id, status: interview.status, started_at: interview.startedAt, report_summary: interview.analysisJson?.summary ?? null });
       grouped.set(interview.applicationId, rows);
     }
     return demoApplications.map(application => ({
@@ -361,7 +363,7 @@ export async function listApplications(): Promise<ApplicationListItem[]> {
   const { data, error } = await supabase
     .from("applications")
     .select(
-      "id, applicant_name, loan_type, requested_amount, loan_purpose, created_at, interviews(id, status, started_at)"
+      "id, applicant_name, loan_type, requested_amount, loan_purpose, created_at, interviews(id, status, started_at, report_summary:analysis_json->>summary)"
     )
     .order("created_at", { ascending: false });
 

@@ -76,6 +76,7 @@ export interface Application {
   // has no interview yet.
   interviewStatus?: "pending" | "in_progress" | "completed" | null;
   reportInterviewId?: string | null;
+  completedInterviewId?: string | null;
 }
 
 export interface InterviewSession {

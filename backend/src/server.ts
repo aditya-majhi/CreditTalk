@@ -504,30 +504,18 @@ app.post("/api/interviews/:id/finalize", asyncRoute(async (req, res) => {
   if (res.locals.borrowerAuthorized && !interview.consentReference) {
     return res.status(403).json({ error: "Borrower consent is required before completing the interview" });
   }
-  // Preserve the conversation before calling an external model. Failure leaves
-  // the interview open so completion can be retried without losing the answers.
-  await persistInterview({ ...interview, transcriptTurns: turns });
-  if (!supabase) updateDemoInterview(interview.id, { transcriptTurns: turns });
-  const analysis = await generateInterviewAnalysis(application, turns);
-  const finalReport = {
-    applicant: application.applicantName,
-    loanType: application.loanType,
-    requestedAmount: application.requestedAmount,
-    purpose: analysis.structuredSummary.loan.purpose,
-    ...analysis,
-  };
+  // Completion only saves the conversation. Lenders generate the report later.
   const completedInterview = { ...interview,
     status: "completed",
     completedAt: new Date().toISOString(),
     transcriptTurns: turns,
-    analysisJson: analysis,
+    analysisJson: null,
   };
 
   await persistInterview({ ...completedInterview, status: "completed" });
   if (!supabase) updateDemoInterview(interview.id, { ...completedInterview, status: "completed" });
 
-  if (res.locals.borrowerAuthorized) return res.json({ completed: true });
-  return res.json(finalReport);
+  return res.json({ completed: true });
 }));
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
